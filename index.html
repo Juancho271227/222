@@ -17,7 +17,7 @@ h1{font-size:32px;line-height:1.1;margin:0 0 8px;letter-spacing:-.04em}.sub{colo
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0 18px}.track{border:1px solid #30384c;background:#1a2030;border-radius:16px;padding:15px 12px;text-align:left;color:var(--text);min-height:75px}.track.active{border-color:var(--accent);background:#292443;box-shadow:inset 0 0 0 1px #8b7cff55}.track b{display:block;font-size:14px}.track small{display:block;color:var(--muted);margin-top:5px;font-size:11px}
 .controls{display:flex;justify-content:center;align-items:center;gap:18px;margin:14px 0 22px}.ctrl{border:0;color:var(--text);background:#293146;border-radius:50%;width:46px;height:46px;font-size:18px}.ctrl.main{width:60px;height:60px;background:linear-gradient(135deg,var(--accent),var(--teal));color:#10131d;font-size:22px}
 .volhead{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:10px}.volhead strong{color:var(--text)}input[type=range]{width:100%;accent-color:#9c90ff}
-.relay{background:linear-gradient(145deg,#1b2030,#121722);border:1px solid #2b3347;border-radius:22px;padding:19px;margin:16px 0}.relaytop{display:flex;align-items:center;gap:12px;margin-bottom:15px}.relayicon{width:44px;height:44px;border-radius:14px;background:#292443;display:grid;place-items:center;font-size:22px}.relaytitle{font-weight:750}.relaydesc{font-size:12px;color:var(--muted);margin-top:3px}.state{margin-left:auto;font-size:11px;border-radius:99px;padding:7px 9px;background:#30384c;color:#c5ccda}.state.on{background:#123b35;color:#72e5d0}.relaybuttons{display:grid;grid-template-columns:1fr 1fr;gap:10px}.relaybuttons button{border:0;border-radius:13px;padding:14px 8px;font-weight:800;font-size:13px}.onbtn{background:linear-gradient(100deg,#72e5d0,#4bbfa9);color:#071a17}.offbtn{background:#342331;color:#ff9aaa;border:1px solid #754052!important}
+.relay{background:linear-gradient(145deg,#1b2030,#121722);border:1px solid #2b3347;border-radius:22px;padding:19px;margin:16px 0}.relaytop{display:flex;align-items:center;gap:12px;margin-bottom:15px}.relayicon{width:44px;height:44px;border-radius:14px;background:#292443;display:grid;place-items:center;font-size:22px}.relaytitle{font-weight:750}.relaydesc{font-size:12px;color:var(--muted);margin-top:3px}.state{margin-left:auto;font-size:11px;border-radius:99px;padding:7px 9px;background:#30384c;color:#c5ccda}.state.on{background:#123b35;color:#72e5d0}.relaybuttons{display:grid;grid-template-columns:1fr}.relaybuttons button{border:0;border-radius:13px;padding:18px 8px;font-weight:800;font-size:14px;touch-action:none;user-select:none;-webkit-user-select:none}.holdbtn{background:linear-gradient(100deg,#72e5d0,#4bbfa9);color:#071a17}.holdbtn.active{background:#342331;color:#ff9aaa;outline:2px solid #72e5d0}
 .note{font-size:11px;line-height:1.5;color:#9aa5b8;margin:10px 2px 0}.footer{color:#778196;font-size:11px;line-height:1.5;text-align:center;margin-top:20px}
 button{cursor:pointer;-webkit-tap-highlight-color:transparent}button:active{transform:scale(.98)}
 </style>
@@ -51,12 +51,11 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}button:active{tran
   <section class="relay">
     <div class="relaytop">
       <div class="relayicon">⚡</div>
-      <div><div class="relaytitle">Control del motor</div><div class="relaydesc">Salida de relé · GPIO 4</div></div>
+      <div><div class="relaytitle">Control del motor</div><div class="relaydesc">Salida SSR · GPIO 25</div></div>
       <span class="state" id="relayState">APAGADO</span>
     </div>
     <div class="relaybuttons">
-      <button class="onbtn" id="relayOn">⏻　ENCENDER MOTOR</button>
-      <button class="offbtn" id="relayOff">■　APAGAR MOTOR</button>
+      <button class="holdbtn" id="relayHold" type="button">⏻　MANTENER PRESIONADO PARA ACTIVAR</button>
     </div>
     <p class="note">El motor debe usar una fuente externa adecuada. No lo alimentes desde el ESP32. Comprueba que el relé soporte la corriente de arranque del motor.</p>
   </section>
@@ -65,7 +64,7 @@ button{cursor:pointer;-webkit-tap-highlight-color:transparent}button:active{tran
 <script>
 const SERVICE_UUID='12345678-1234-1234-1234-123456789000';
 const CHARACTERISTIC_UUID='12345678-1234-1234-1234-123456789001';
-let device=null,characteristic=null,current=0,playing=false,volume=20,relayOn=false;
+let device=null,characteristic=null,current=0,playing=false,volume=20,relayOn=false,holdActive=false;
 const $=id=>document.getElementById(id);
 function status(msg){$('status').textContent=msg}
 function connectedUI(on){$('dot').classList.toggle('on',on);$('connection').textContent=on?'Conectado':'Desconectado';$('connect').textContent=on?'✓　ESP32 conectado':'⌁　Conectar ESP32'}
@@ -79,7 +78,7 @@ async function connect(){
   try{
     status('Buscando ESP32_REPRODUCTOR…');
     device=await navigator.bluetooth.requestDevice({filters:[{name:'ESP32_REPRODUCTOR'}],optionalServices:[SERVICE_UUID]});
-    device.addEventListener('gattserverdisconnected',()=>{characteristic=null;connectedUI(false);status('Conexión perdida. Vuelve a conectar.')});
+    device.addEventListener('gattserverdisconnected',()=>{characteristic=null;holdActive=false;relayOn=false;updateRelayUI(false);connectedUI(false);status('Conexión perdida. SSR en estado apagado.')});
     const server=await device.gatt.connect();
     const service=await server.getPrimaryService(SERVICE_UUID);
     characteristic=await service.getCharacteristic(CHARACTERISTIC_UUID);
@@ -94,8 +93,17 @@ $('stop').addEventListener('click',()=>{send('S');playing=false;$('toggle').text
 $('next').addEventListener('click',()=>selectTrack(current===0||current===4?1:current+1));
 $('prev').addEventListener('click',()=>selectTrack(current<=1?4:current-1));
 $('volume').addEventListener('input',e=>{const target=Number(e.target.value);$('volLabel').textContent=target+' / 30';const diff=target-volume;for(let i=0;i<Math.abs(diff);i++)send(diff>0?'+':'-');volume=target});
-$('relayOn').addEventListener('click',async()=>{if(await send('E')){relayOn=true;$('relayState').textContent='ENCENDIDO';$('relayState').classList.add('on');status('Orden de encendido enviada al motor.')}});
-$('relayOff').addEventListener('click',async()=>{if(await send('D')){relayOn=false;$('relayState').textContent='APAGADO';$('relayState').classList.remove('on');status('Orden de apagado enviada al motor.')}});
+function updateRelayUI(on){relayOn=on;$('relayState').textContent=on?'ACTIVADO':'APAGADO';$('relayState').classList.toggle('on',on);$('relayHold').classList.toggle('active',on);$('relayHold').textContent=on?'●　SUELTA PARA DESACTIVAR':'⏻　MANTENER PRESIONADO PARA ACTIVAR'}
+async function holdStart(e){e.preventDefault();if(holdActive)return;if(!characteristic){status('Primero conecta el ESP32.');return}holdActive=true;try{await characteristic.writeValue(new TextEncoder().encode('E'));updateRelayUI(true);status('SSR activado mientras mantienes presionado.')}catch(err){holdActive=false;updateRelayUI(false);status('No se pudo activar: '+err.message)}}
+async function holdEnd(e){if(e)e.preventDefault();if(!holdActive)return;holdActive=false;try{if(characteristic)await characteristic.writeValue(new TextEncoder().encode('D'));updateRelayUI(false);status('Botón soltado: SSR desactivado.')}catch(err){updateRelayUI(false);status('No se pudo desactivar: '+err.message)}}
+const holdButton=$('relayHold');
+holdButton.addEventListener('pointerdown',holdStart);
+holdButton.addEventListener('pointerup',holdEnd);
+holdButton.addEventListener('pointercancel',holdEnd);
+holdButton.addEventListener('lostpointercapture',holdEnd);
+holdButton.addEventListener('contextmenu',e=>e.preventDefault());
+window.addEventListener('pointerup',holdEnd);
+window.addEventListener('blur',holdEnd);
 if(!navigator.bluetooth)status('Web Bluetooth no disponible. Usa Chrome en Android y una página HTTPS.');
 </script>
 </body>
